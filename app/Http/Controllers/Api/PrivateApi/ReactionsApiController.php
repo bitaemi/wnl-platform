@@ -35,38 +35,23 @@ class ReactionsApiController extends ApiController
 			$now = Carbon::now();
 
 			try {
-				if (!$user->reactables->contains(function($value, $key) use ($reactable, $modelName, $reaction, $reactions, $user) {
-					return $value->reactable_id == $reactable->id
-						&& $value->reactable_type == $modelName
-						&& $value->reaction_id == $reaction->id;
-				})) {
-					$reactable->reactions()->attach($reaction, [
-						'user_id'    => $user->id,
-						'created_at' => $now,
-						'updated_at' => $now,
-						'context'    => $context,
-					]);
-
-					// Since there's no action performed on reaction model,
-					// we have to trigger the event manually.
-					event(new ReactionAdded($reaction, $reactable, $user->id));
-				} else {
-					\Log::debug(
-						'Already had the reaction, skipping for '
-						. $reactionParam['reactable_resource'] . ' '
-						. $reactionParam['reactable_id']
-					);
-				}
-			} catch (\Illuminate\Database\QueryException $e) {
-				$sentryClient = new \Raven_Client(env('SENTRY_DSN'));
-				$sentryClient->captureException($e, [
-					'extra' => ['post_params' => $reactions,
-					'user' => $user->id]
+				$reactable->reactions()->attach($reaction, [
+					'user_id'    => $user->id,
+					'created_at' => $now,
+					'updated_at' => $now,
+					'context'    => $context,
 				]);
 
-				return $this->respondInternalError($e->getMessage());
+				// Since there's no action performed on reaction model,
+				// we have to trigger the event manually.
+				event(new ReactionAdded($reaction, $reactable, $user->id));
+			} catch (\Illuminate\Database\QueryException $e) {
+				if ($e->errorInfo[1] === 1062) {
+					// Means user already has this reaction, ignore exception because I can't think of anything better
+				} else {
+					return $this->respondInternalError($e->getMessage());
+				}
 			}
-
 		}
 
 		return $this->respondCreated();
